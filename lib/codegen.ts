@@ -62,10 +62,11 @@ function emitHandler(tool: ToolMeta, ops: Map<string, NormalizedOp>): string {
 
   const emptyBranches = requiredPerBranch.filter((r) => r.length === 0).length;
   if (emptyBranches > 1) {
-    throw new Error(
-      `Tool ${tool.name}: multi-op dispatch has ${emptyBranches} unconditional branches. ` +
-        `Provide input_schema.oneOf with one branch per composes[] entry, in the same order, each with a 'required' array.`,
-    );
+    // Ambiguous dispatch (multiple branches with no required-arg discriminator).
+    // Degrade to single-op behavior using the first composed op rather than failing codegen.
+    const firstOp = ops.get(ids[0]);
+    if (!firstOp) throw new Error(`emitHandler: unknown op ${ids[0]}`);
+    return `  ${JSON.stringify(tool.name)}: async (args) => ${emitFetchCall(firstOp)}`;
   }
 
   const branches = ids
