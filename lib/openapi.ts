@@ -1,31 +1,99 @@
 import yaml from "yaml";
+import Anthropic from "@anthropic-ai/sdk";
 import type { NormalizedSpec, NormalizedOp, NormalizedParam } from "./types";
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+export type FetchProgress = (event: "discovering" | "redirecting", msg: string) => void;
+
+function isHtml(contentType: string, text: string): boolean {
+  return contentType.includes("text/html") || /^\s*<(!doctype|html|head|body)/i.test(text);
+}
+
+async function fetchText(url: string): Promise<{ text: string; contentType: string }> {
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch (e) {
+    throw new Error(`Could not reach ${url}: ${(e as Error).message}`);
+  }
+  if (!res.ok) {
+    throw new Error(`${url} returned ${res.status} ${res.statusText}.`);
+  }
+  return { text: await res.text(), contentType: res.headers.get("content-type") ?? "" };
+}
+
+async function discoverSpecUrl(html: string, sourceUrl: string): Promise<string | null> {
+  // Trim to keep token use reasonable. Bias to the head + body start where links usually live.
+  const trimmed = html.length > 80_000 ? html.slice(0, 60_000) + "\n...[truncated]...\n" + html.slice(-20_000) : html;
+
+  const response = await anthropic.messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 200,
+    system: `You find URLs to OpenAPI/Swagger spec files on documentation pages.
+
+Given the HTML of a docs/landing page, return the URL where the OpenAPI JSON or YAML spec can be downloaded.
+
+Look for:
+- <a> links with href ending in openapi.json, openapi.yaml, swagger.json, swagger.yaml, api.json, spec.json
+- Anchor text like "Download OpenAPI", "openapi.json", "swagger.json", "Download Spec", "Raw OpenAPI"
+- <link rel="alternate" type="application/openapi+json"> or similar
+- Embedded data attributes / script JSON that point at a spec URL (Scalar, ReDoc, Stoplight, RapiDoc embed it)
+- Common conventional paths on the same origin: /openapi.json, /api/openapi.json, /v1/openapi.json, /spec, /swagger.json
+
+Output rules:
+- Return ONLY a single absolute URL on the first line, or the literal word NONE.
+- Resolve relative URLs against the page's URL (provided below).
+- Prefer JSON over YAML. Prefer same-origin or sibling subdomains.
+- Do NOT return URLs that point to docs pages, blog posts, or GitHub README files.
+- Do NOT include any explanation, markdown, or quotes.
+
+Page URL: ${sourceUrl}`,
+    messages: [
+      { role: "user", content: `HTML:\n\n${trimmed}\n\nSpec URL?` },
+    ],
+  });
+
+  const block = response.content.find((c) => c.type === "text") as { type: "text"; text: string } | undefined;
+  if (!block) return null;
+  const first = block.text.trim().split("\n")[0]?.trim();
+  if (!first || first === "NONE") return null;
+  if (!/^https?:\/\//i.test(first)) return null;
+  return first;
+}
 
 export async function fetchAndNormalize(
   source: { kind: "url" | "inline"; value: string },
   baseUrlOverride?: string,
+  onProgress?: FetchProgress,
 ): Promise<NormalizedSpec> {
   let text: string;
+
   if (source.kind === "url") {
-    let res: Response;
-    try {
-      res = await fetch(source.value);
-    } catch (e) {
-      throw new Error(`Could not reach ${source.value}: ${(e as Error).message}`);
-    }
-    if (!res.ok) {
-      throw new Error(`Spec URL returned ${res.status} ${res.statusText}. Check the URL is the raw OpenAPI document, not a docs page.`);
-    }
-    const contentType = res.headers.get("content-type") ?? "";
-    text = await res.text();
-    if (contentType.includes("text/html") || /^\s*<(!doctype|html|head|body)/i.test(text)) {
-      throw new Error(
-        `That URL returned an HTML page, not an OpenAPI spec. You probably pasted a docs page — find the link labeled "Download OpenAPI", "openapi.json", or "swagger.json" on the docs site, or check the API's developer reference.`,
-      );
+    const initial = await fetchText(source.value);
+    text = initial.text;
+
+    if (isHtml(initial.contentType, text)) {
+      onProgress?.("discovering", `looks like a docs page — asking Claude to find the spec URL...`);
+      const discovered = await discoverSpecUrl(text, source.value);
+      if (!discovered) {
+        throw new Error(
+          `That URL returned an HTML page and we couldn't find an OpenAPI spec link on it. Look for "Download OpenAPI" / "openapi.json" / "swagger.json" on the docs site, or paste the spec URL directly.`,
+        );
+      }
+      onProgress?.("redirecting", `found ${discovered} — fetching...`);
+      const followed = await fetchText(discovered);
+      if (isHtml(followed.contentType, followed.text)) {
+        throw new Error(
+          `Discovered URL ${discovered} also returned HTML. The docs page may not link to a downloadable spec — paste the spec URL directly if you have it.`,
+        );
+      }
+      text = followed.text;
     }
   } else {
     text = source.value;
   }
+
   const spec = parseSpec(text);
   return normalize(spec, baseUrlOverride);
 }

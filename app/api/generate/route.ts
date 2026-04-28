@@ -41,7 +41,11 @@ export async function POST(req: NextRequest) {
 
       try {
         send("progress", { stage: "parsing" });
-        const spec = await fetchAndNormalize(body.source, body.baseUrl);
+        const spec = await fetchAndNormalize(body.source, body.baseUrl, (_event, msg) => {
+          // Surface discovery/redirect activity inside the existing parsing stage so the UI's
+          // 4-step stepper doesn't have to learn new stage names.
+          send("progress", { stage: "parsing", msg });
+        });
 
         send("progress", {
           stage: "curating",
