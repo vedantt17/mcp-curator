@@ -5,17 +5,43 @@ export async function fetchAndNormalize(
   source: { kind: "url" | "inline"; value: string },
   baseUrlOverride?: string,
 ): Promise<NormalizedSpec> {
-  const text = source.kind === "url"
-    ? await (await fetch(source.value)).text()
-    : source.value;
+  let text: string;
+  if (source.kind === "url") {
+    let res: Response;
+    try {
+      res = await fetch(source.value);
+    } catch (e) {
+      throw new Error(`Could not reach ${source.value}: ${(e as Error).message}`);
+    }
+    if (!res.ok) {
+      throw new Error(`Spec URL returned ${res.status} ${res.statusText}. Check the URL is the raw OpenAPI document, not a docs page.`);
+    }
+    const contentType = res.headers.get("content-type") ?? "";
+    text = await res.text();
+    if (contentType.includes("text/html") || /^\s*<(!doctype|html|head|body)/i.test(text)) {
+      throw new Error(
+        `That URL returned an HTML page, not an OpenAPI spec. You probably pasted a docs page — find the link labeled "Download OpenAPI", "openapi.json", or "swagger.json" on the docs site, or check the API's developer reference.`,
+      );
+    }
+  } else {
+    text = source.value;
+  }
   const spec = parseSpec(text);
   return normalize(spec, baseUrlOverride);
 }
 
 function parseSpec(text: string): any {
-  const trimmed = text.trim();
-  if (trimmed.startsWith("{")) return JSON.parse(text);
-  return yaml.parse(text);
+  const trimmed = text.trim().replace(/^﻿/, ""); // strip BOM
+  if (!trimmed) throw new Error("Spec is empty");
+  if (trimmed.startsWith("<")) {
+    throw new Error("Input looks like HTML/XML, not an OpenAPI spec. Paste a raw JSON or YAML OpenAPI document.");
+  }
+  try {
+    if (trimmed.startsWith("{")) return JSON.parse(trimmed);
+    return yaml.parse(trimmed);
+  } catch (e) {
+    throw new Error(`Could not parse spec as JSON or YAML: ${(e as Error).message}`);
+  }
 }
 
 function normalize(spec: any, baseUrlOverride?: string): NormalizedSpec {
