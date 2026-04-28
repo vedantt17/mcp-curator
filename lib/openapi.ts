@@ -4,7 +4,7 @@ import type { NormalizedSpec, NormalizedOp, NormalizedParam } from "./types";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-export type FetchProgress = (event: "discovering" | "redirecting", msg: string) => void;
+export type FetchProgress = (event: "discovering" | "redirecting" | "generating-spec", msg: string) => void;
 
 function isHtml(contentType: string, text: string): boolean {
   return contentType.includes("text/html") || /^\s*<(!doctype|html|head|body)/i.test(text);
@@ -21,6 +21,85 @@ async function fetchText(url: string): Promise<{ text: string; contentType: stri
     throw new Error(`${url} returned ${res.status} ${res.statusText}.`);
   }
   return { text: await res.text(), contentType: res.headers.get("content-type") ?? "" };
+}
+
+async function generateSpecFromKnowledge(
+  sourceUrl: string,
+  html: string | null,
+): Promise<{ spec: any; baseUrl: string } | null> {
+  const trimmed = html ? html.slice(0, 20_000) : "";
+  let hostname = "";
+  try {
+    hostname = new URL(sourceUrl).hostname;
+  } catch {
+    // ignore
+  }
+
+  const response = await anthropic.messages.create({
+    model: "claude-opus-4-7",
+    max_tokens: 4000,
+    system: `You generate minimal OpenAPI 3.0 specs for public REST APIs using a URL and your training knowledge.
+
+You will receive a URL the user pasted. Often it's a marketing page, blog post, or generic docs page that doesn't itself contain a spec. Your job is to figure out what API the user probably wants to call and emit a usable OpenAPI 3.0 spec for it.
+
+DEFAULT TO BEING HELPFUL. Most pasted URLs come from companies that DO have a public REST API even if the page isn't the API docs page. Use the hostname as your primary signal.
+
+Examples of mappings you should make confidently:
+- *.postman.com → Postman API at https://api.getpostman.com (collections, workspaces, environments, monitors)
+- *.stripe.com → Stripe API at https://api.stripe.com/v1 (charges, customers, subscriptions, payment_intents)
+- *.github.com → GitHub REST API at https://api.github.com (repos, issues, pulls, releases)
+- *.notion.so → Notion API at https://api.notion.com/v1 (pages, databases, users, blocks)
+- *.linear.app → GraphQL only; output UNKNOWN
+- *.openweathermap.org → OpenWeather at https://api.openweathermap.org/data/2.5
+- *.twilio.com → Twilio at https://api.twilio.com/2010-04-01
+- *.sendgrid.com → SendGrid at https://api.sendgrid.com/v3
+- *.airtable.com → Airtable at https://api.airtable.com/v0
+- *.shopify.com → Shopify Admin API at https://{shop}.myshopify.com/admin/api/{version}
+
+If you recognize the company/product (from hostname or page content) and know its REST API, generate the spec. It's OK to extrapolate — the spec is a starting point, not legal commitment. Cover the 8-12 most useful endpoints.
+
+Only output UNKNOWN if:
+- The URL points to something that has no API (a blog, news site, individual person's homepage)
+- The company exists but you genuinely don't know their API base URL or endpoints
+- The product is GraphQL-only or otherwise not REST
+
+Output rules:
+- JSON only — no markdown, no code fences, no prose, no comments.
+- Required fields: openapi: "3.0.0", info { title, version }, servers[0].url (real production base URL), paths.
+- 8-12 path entries covering the most useful endpoints.
+- Every operation: operationId, summary, parameters/requestBody as appropriate, response schemas optional.
+- Add "x-generated": true at root.
+
+Hostname: ${hostname}
+Pasted URL: ${sourceUrl}`,
+    messages: [
+      {
+        role: "user",
+        content: trimmed
+          ? `Page content (excerpt):\n\n${trimmed}\n\nIdentify the API and generate its OpenAPI spec, or output UNKNOWN if there is genuinely no public REST API to target.`
+          : `Identify the API at ${sourceUrl} and generate its OpenAPI spec, or output UNKNOWN if there is genuinely no public REST API to target.`,
+      },
+    ],
+  });
+
+  const block = response.content.find((c) => c.type === "text") as
+    | { type: "text"; text: string }
+    | undefined;
+  if (!block) return null;
+  let text = block.text.trim();
+  if (!text || text === "UNKNOWN") return null;
+  text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed.openapi && !parsed.swagger) return null;
+    if (!parsed.paths || Object.keys(parsed.paths).length === 0) return null;
+    const baseUrl = parsed.servers?.[0]?.url;
+    if (!baseUrl || typeof baseUrl !== "string") return null;
+    return { spec: parsed, baseUrl };
+  } catch {
+    return null;
+  }
 }
 
 async function discoverSpecUrl(html: string, sourceUrl: string): Promise<string | null> {
@@ -78,20 +157,35 @@ export async function fetchAndNormalize(
     if (isHtml(initial.contentType, text)) {
       onProgress?.("discovering", `looks like a docs page — asking Claude to find the spec URL...`);
       const discovered = await discoverSpecUrl(text, source.value);
-      if (!discovered) {
-        throw new Error(
-          `That URL returned an HTML page and we couldn't find an OpenAPI spec link on it. Look for "Download OpenAPI" / "openapi.json" / "swagger.json" on the docs site, or paste the spec URL directly.`,
-        );
+
+      if (discovered) {
+        onProgress?.("redirecting", `found ${discovered} — fetching...`);
+        const followed = await fetchText(discovered);
+        if (isHtml(followed.contentType, followed.text)) {
+          // discovered URL is also HTML — fall through to generation
+          onProgress?.("generating-spec", `discovered URL also returned HTML — generating spec from training knowledge...`);
+          const generated = await generateSpecFromKnowledge(source.value, text);
+          if (!generated) {
+            throw new Error(
+              `Could not find a downloadable OpenAPI spec on that page, and Claude couldn't generate one from its training knowledge either. Try a more specific docs URL, or paste the raw spec.`,
+            );
+          }
+          return normalize(generated.spec, baseUrlOverride, generated.baseUrl);
+        }
+        text = followed.text;
+        resolvedSpecUrl = discovered;
+      } else {
+        // No spec link found on the page — try generation as a last resort.
+        onProgress?.("generating-spec", `no spec link found — generating from training knowledge...`);
+        const generated = await generateSpecFromKnowledge(source.value, text);
+        if (!generated) {
+          throw new Error(
+            `That URL returned an HTML page, no spec link was found on it, and Claude couldn't identify the API from its training knowledge. ` +
+            `Try a URL closer to the actual API docs (not a marketing page), or paste the raw OpenAPI spec.`,
+          );
+        }
+        return normalize(generated.spec, baseUrlOverride, generated.baseUrl);
       }
-      onProgress?.("redirecting", `found ${discovered} — fetching...`);
-      const followed = await fetchText(discovered);
-      if (isHtml(followed.contentType, followed.text)) {
-        throw new Error(
-          `Discovered URL ${discovered} also returned HTML. The docs page may not link to a downloadable spec — paste the spec URL directly if you have it.`,
-        );
-      }
-      text = followed.text;
-      resolvedSpecUrl = discovered;
     }
   } else {
     text = source.value;
