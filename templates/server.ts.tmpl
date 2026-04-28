@@ -1,0 +1,53 @@
+#!/usr/bin/env node
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+
+const BASE_URL = "__BASE_URL__";
+const API_KEY = process.env.__API_KEY_ENV__;
+if (!API_KEY) {
+  console.error("Missing env var: __API_KEY_ENV__");
+  process.exit(1);
+}
+
+const TOOLS = __TOOLS_JSON__;
+
+async function call(p: string, init: RequestInit & { query?: Record<string, any> } = {}) {
+  const url = new URL(BASE_URL + p);
+  for (const [k, v] of Object.entries(init.query ?? {})) {
+    if (v != null) url.searchParams.set(k, String(v));
+  }
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    [__AUTH_HEADER__]: __AUTH_VALUE__,
+    ...((init.headers as Record<string, string>) ?? {}),
+  };
+  const res = await fetch(url, { ...init, headers });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${await res.text()}`);
+  const ct = res.headers.get("content-type") ?? "";
+  return ct.includes("json") ? res.json() : res.text();
+}
+
+const HANDLERS: Record<string, (args: any) => Promise<any>> = {
+__HANDLERS__
+};
+
+const server = new Server(
+  { name: "__NAME__", version: "0.1.0" },
+  { capabilities: { tools: {} } },
+);
+
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: TOOLS.map((t: any) => ({ name: t.name, description: t.description, inputSchema: t.input_schema })),
+}));
+
+server.setRequestHandler(CallToolRequestSchema, async (req) => {
+  const h = HANDLERS[req.params.name];
+  if (!h) throw new Error(`Unknown tool: ${req.params.name}`);
+  const out = await h(req.params.arguments ?? {});
+  return {
+    content: [{ type: "text", text: typeof out === "string" ? out : JSON.stringify(out, null, 2) }],
+  };
+});
+
+await server.connect(new StdioServerTransport());
