@@ -68,10 +68,12 @@ export async function fetchAndNormalize(
   onProgress?: FetchProgress,
 ): Promise<NormalizedSpec> {
   let text: string;
+  let resolvedSpecUrl: string | undefined;
 
   if (source.kind === "url") {
     const initial = await fetchText(source.value);
     text = initial.text;
+    resolvedSpecUrl = source.value;
 
     if (isHtml(initial.contentType, text)) {
       onProgress?.("discovering", `looks like a docs page — asking Claude to find the spec URL...`);
@@ -89,13 +91,14 @@ export async function fetchAndNormalize(
         );
       }
       text = followed.text;
+      resolvedSpecUrl = discovered;
     }
   } else {
     text = source.value;
   }
 
   const spec = parseSpec(text);
-  return normalize(spec, baseUrlOverride);
+  return normalize(spec, baseUrlOverride, resolvedSpecUrl);
 }
 
 function parseSpec(text: string): any {
@@ -112,10 +115,35 @@ function parseSpec(text: string): any {
   }
 }
 
-function normalize(spec: any, baseUrlOverride?: string): NormalizedSpec {
+function normalize(spec: any, baseUrlOverride?: string, sourceUrl?: string): NormalizedSpec {
   if (!spec.openapi && !spec.swagger) throw new Error("Not an OpenAPI/Swagger spec");
-  const baseUrl = baseUrlOverride || spec.servers?.[0]?.url || "";
-  if (!baseUrl) throw new Error("No baseUrl in spec; provide baseUrl override");
+
+  let baseUrl = baseUrlOverride || spec.servers?.[0]?.url || "";
+
+  // Swagger 2.0 fallback: construct from host + basePath + schemes
+  if (!baseUrl && spec.swagger && spec.host) {
+    const scheme = (Array.isArray(spec.schemes) && spec.schemes[0]) || "https";
+    baseUrl = `${scheme}://${spec.host}${spec.basePath || ""}`;
+  }
+
+  // Last-resort fallback: use the origin of the URL we fetched the spec from.
+  // The OpenAPI spec says when servers[] is omitted, the API is served from where
+  // the spec is hosted — so this matches the spec's own semantics.
+  if (!baseUrl && sourceUrl) {
+    try {
+      const u = new URL(sourceUrl);
+      baseUrl = `${u.protocol}//${u.host}`;
+    } catch {
+      // ignore — fall through to error below
+    }
+  }
+
+  if (!baseUrl) {
+    throw new Error(
+      `Spec has no servers[] and we could not infer a base URL. ` +
+      `If the API is reachable at a known origin, paste a JSON spec with a "servers" array, or call this with a baseUrl override.`,
+    );
+  }
 
   const name = (spec.info?.title || "api")
     .toLowerCase()
