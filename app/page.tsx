@@ -13,7 +13,6 @@ const SAMPLES = [
   { label: "Petstore — Demo REST API", value: "https://petstore3.swagger.io/api/v3/openapi.json" },
 ];
 
-/* ── Inline SVG icons (no emoji, no external deps) ─────────────────── */
 function IconArrowRight() {
   return (
     <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
@@ -150,112 +149,121 @@ export default function Page() {
 
   return (
     <div className={s.root}>
-      {/* ── Nav ── */}
-      <nav className={s.nav}>
-        <div className={s.navLogo}>
-          <div className={s.navLogoMark}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <rect x="1" y="1" width="5" height="5" rx="1" fill="white" />
-              <rect x="8" y="1" width="5" height="5" rx="1" fill="white" fillOpacity="0.5" />
-              <rect x="1" y="8" width="5" height="5" rx="1" fill="white" fillOpacity="0.5" />
-              <rect x="8" y="8" width="5" height="5" rx="1" fill="#34d399" />
-            </svg>
+      {/* ── Floating pill nav ── */}
+      <div className={s.navWrap}>
+        <nav className={s.nav}>
+          <div className={s.navLeft}>
+            <div className={s.navLogoMark}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <rect x="1" y="1" width="5" height="5" rx="1" fill="white" />
+                <rect x="8" y="1" width="5" height="5" rx="1" fill="white" fillOpacity="0.5" />
+                <rect x="1" y="8" width="5" height="5" rx="1" fill="white" fillOpacity="0.5" />
+                <rect x="8" y="8" width="5" height="5" rx="1" fill="#34d399" />
+              </svg>
+            </div>
+            <span className={s.navWordmark}>MCP Curator</span>
           </div>
-          <span className={s.navWordmark}>MCP Curator</span>
-        </div>
-        <div className={s.navBadge}>
-          <span className={s.navBadgeDot} />
-          Powered by Claude
-        </div>
-      </nav>
+          <div className={s.navPill}>
+            <span className={s.navDot} />
+            Powered by Claude
+          </div>
+        </nav>
+      </div>
 
-      <div className={s.container}>
-        {/* ── Hero (left-aligned) ── */}
+      <div className={s.page}>
+        {/* ── Editorial Split Hero ── */}
         <header className={s.hero}>
-          <div className={s.heroEyebrow}>
-            <span className={s.heroEyebrowLine} />
-            OpenAPI to MCP
+          <div className={s.heroLeft}>
+            <div className={s.heroEyebrow}>
+              <span className={s.eyebrowDot} />
+              OpenAPI to MCP
+            </div>
+            <h1 className={s.heroTitle}>
+              Your API,<br />
+              <span className={s.heroAccent}>Claude-ready.</span>
+            </h1>
+            <p className={s.heroSub}>
+              Paste any OpenAPI spec. Get a curated, lean MCP server with rewritten tool descriptions — installable with one command.
+            </p>
           </div>
-          <h1 className={s.heroTitle}>
-            Your API,<br />
-            <span className={s.heroAccent}>Claude-ready.</span>
-          </h1>
-          <p className={s.heroSub}>
-            Paste any OpenAPI spec. Get a curated, lean MCP server with rewritten tool descriptions — installable with one command.
-          </p>
+
+          {/* ── Double-Bezel input card (right column) ── */}
+          <div className={s.inputShell}>
+            <div className={s.inputCore}>
+              <label className={s.inputLabel}>OpenAPI Specification</label>
+              <textarea
+                className={s.textarea}
+                value={specInput}
+                onChange={e => setSpecInput(e.target.value)}
+                rows={4}
+                placeholder="Paste a URL (https://...) or raw JSON / YAML"
+                spellCheck={false}
+              />
+              <div className={s.inputRow}>
+                <div className={s.inputGroup}>
+                  <label className={s.fieldLabel}>API key env var</label>
+                  <input
+                    className={s.textInput}
+                    value={apiKeyEnv}
+                    onChange={e => setApiKeyEnv(e.target.value)}
+                    placeholder="API_KEY"
+                  />
+                </div>
+                <div className={s.inputGroup}>
+                  <label className={s.fieldLabel}>Sample specs</label>
+                  <select
+                    className={s.select}
+                    defaultValue=""
+                    onChange={e => e.target.value && setSpecInput(e.target.value)}
+                  >
+                    <option value="" disabled>Choose a sample…</option>
+                    {SAMPLES.map(sample => (
+                      <option key={sample.value} value={sample.value}>{sample.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <button className={s.btnGenerate} onClick={generate} disabled={loading}>
+                  {loading ? "Generating…" : "Generate"}
+                  <span className={s.btnIconWrap}>
+                    {loading ? <span className={s.spinner} /> : <IconArrowRight />}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
         </header>
 
-        {/* ── Input card ── */}
-        <div className={s.card}>
-          <label className={s.fieldLabel}>OpenAPI Specification</label>
-          <textarea
-            className={s.textarea}
-            value={specInput}
-            onChange={e => setSpecInput(e.target.value)}
-            rows={4}
-            placeholder="Paste a URL (https://...) or raw JSON / YAML"
-            spellCheck={false}
-          />
-          <div className={s.inputRow}>
-            <div className={s.inputGroup}>
-              <label className={s.fieldLabel}>API key env var</label>
-              <input
-                className={s.textInput}
-                value={apiKeyEnv}
-                onChange={e => setApiKeyEnv(e.target.value)}
-                placeholder="API_KEY"
-              />
-            </div>
-            <div className={s.inputGroup}>
-              <label className={s.fieldLabel}>Sample specs</label>
-              <select
-                className={s.select}
-                defaultValue=""
-                onChange={e => e.target.value && setSpecInput(e.target.value)}
-              >
-                <option value="" disabled>Choose a sample…</option>
-                {SAMPLES.map(sample => (
-                  <option key={sample.value} value={sample.value}>{sample.label}</option>
-                ))}
-              </select>
-            </div>
-            <button className={s.btnGenerate} onClick={generate} disabled={loading}>
-              {loading ? <span className={s.spinner} /> : <span className={s.btnAccent} />}
-              {loading ? "Generating…" : "Generate"}
-              {!loading && <IconArrowRight />}
-            </button>
-          </div>
-        </div>
-
-        {/* ── Progress ── */}
+        {/* ── Progress (double-bezel) ── */}
         {activeStage && (
-          <div className={`${s.card} ${s.progressCard}`}>
-            <div className={s.stageTrack}>
-              {STAGE_ORDER.map((st, i) => {
-                const isDone   = completedStages.has(st);
-                const isActive = activeStage === st;
-                return (
-                  <div key={st} className={s.stageItem}>
-                    <div className={`${s.stageDot} ${isDone ? s.stageDotDone : isActive ? s.stageDotActive : s.stageDotPending}`}>
-                      {isDone ? <IconCheck /> : i + 1}
+          <div className={s.progressShell}>
+            <div className={s.progressCore}>
+              <div className={s.stageTrack}>
+                {STAGE_ORDER.map((st, i) => {
+                  const isDone   = completedStages.has(st);
+                  const isActive = activeStage === st;
+                  return (
+                    <div key={st} className={s.stageItem}>
+                      <div className={`${s.stageDot} ${isDone ? s.stageDotDone : isActive ? s.stageDotActive : s.stageDotPending}`}>
+                        {isDone ? <IconCheck /> : i + 1}
+                      </div>
+                      <span className={`${s.stageLabel} ${isDone ? s.stageLabelDone : isActive ? s.stageLabelActive : ""}`}>
+                        {st}
+                      </span>
+                      {i < STAGE_ORDER.length - 1 && (
+                        <div className={`${s.stageLine} ${isDone ? s.stageLineFilled : ""}`} />
+                      )}
                     </div>
-                    <span className={`${s.stageLabel} ${isDone ? s.stageLabelDone : isActive ? s.stageLabelActive : ""}`}>
-                      {st}
-                    </span>
-                    {i < STAGE_ORDER.length - 1 && (
-                      <div className={`${s.stageLine} ${isDone ? s.stageLineFilled : ""}`} />
-                    )}
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+              {stageMsg && <p className={s.stageMsg}>{stageMsg}</p>}
             </div>
-            {stageMsg && <p className={s.stageMsg}>{stageMsg}</p>}
           </div>
         )}
 
         {/* ── Error ── */}
         {err && (
-          <div className={`${s.card} ${s.errorCard}`}>
+          <div className={s.errorShell}>
             <IconWarning /> {err}
           </div>
         )}
@@ -263,62 +271,68 @@ export default function Page() {
         {/* ── Results ── */}
         {result && (
           <>
-            {/* Metrics */}
+            {/* Metrics (double-bezel) */}
             <div className={s.metricsStrip}>
-              <div className={s.metricCell}>
-                <span className={s.metricVal}>{result.mechanical.length}</span>
-                <span className={s.metricKey}>Raw operations</span>
-              </div>
-              <div className={s.metricCell}>
-                <span className={`${s.metricVal} ${s.metricValGreen}`}>{result.curated.length}</span>
-                <span className={s.metricKey}>Curated tools</span>
-              </div>
-              <div className={s.metricCell}>
-                <span className={`${s.metricVal} ${s.metricValGreen}`}>{reductionPct}%</span>
-                <span className={s.metricKey}>Leaner</span>
-              </div>
-              <div className={s.metricCell}>
-                <span className={`${s.metricTag} ${s.metricTagGreen}`}>MCP ready</span>
-              </div>
-              <div className={s.metricCell}>
-                <span className={`${s.metricTag} ${s.metricTagZinc}`}>TypeScript</span>
+              <div className={s.metricsInner}>
+                <div className={s.metricCell}>
+                  <span className={s.metricVal}>{result.mechanical.length}</span>
+                  <span className={s.metricKey}>Raw operations</span>
+                </div>
+                <div className={s.metricCell}>
+                  <span className={`${s.metricVal} ${s.metricValGreen}`}>{result.curated.length}</span>
+                  <span className={s.metricKey}>Curated tools</span>
+                </div>
+                <div className={s.metricCell}>
+                  <span className={`${s.metricVal} ${s.metricValGreen}`}>{reductionPct}%</span>
+                  <span className={s.metricKey}>Leaner</span>
+                </div>
+                <div className={s.metricCell}>
+                  <span className={`${s.metricTag} ${s.metricTagGreen}`}>MCP ready</span>
+                </div>
+                <div className={s.metricCell}>
+                  <span className={`${s.metricTag} ${s.metricTagZinc}`}>TypeScript</span>
+                </div>
               </div>
             </div>
 
-            {/* Side-by-side */}
+            {/* Side-by-side tool panes */}
             <div className={s.compareGrid}>
               <ToolPane title="Raw Mechanical" count={result.mechanical.length} tools={result.mechanical} dim />
               <ToolPane title="Claude Curated" count={result.curated.length} tools={result.curated} highlight />
             </div>
 
-            {/* Install */}
+            {/* Install (double-bezel) */}
             <div className={s.installSection}>
-              <div className={s.installBlock}>
-                <div className={s.installLabel}>Install command</div>
-                <div className={s.codeRow}>
-                  <code className={s.codeChip}>npx mcp-from-spec {result.id}</code>
-                  <button
-                    className={`${s.copyBtn} ${copied === "cmd" ? s.copyBtnDone : ""}`}
-                    onClick={() => copy(`npx mcp-from-spec ${result.id}`, "cmd")}
-                  >
-                    {copied === "cmd" ? <IconCheck /> : <IconCopy />}
-                    {copied === "cmd" ? "Copied" : "Copy"}
-                  </button>
+              <div className={s.installShell}>
+                <div className={s.installCore}>
+                  <div className={s.installLabel}>Install command</div>
+                  <div className={s.codeRow}>
+                    <code className={s.codeChip}>npx mcp-from-spec {result.id}</code>
+                    <button
+                      className={`${s.copyBtn} ${copied === "cmd" ? s.copyBtnDone : ""}`}
+                      onClick={() => copy(`npx mcp-from-spec ${result.id}`, "cmd")}
+                    >
+                      {copied === "cmd" ? <IconCheck /> : <IconCopy />}
+                      {copied === "cmd" ? "Copied" : "Copy"}
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div className={s.installBlock}>
-                <div className={s.installLabel}>Claude Desktop config</div>
-                <div className={s.codeRow}>
-                  <code className={s.codeChip}>claude_desktop_config.json</code>
-                  <button
-                    className={`${s.copyBtn} ${copied === "cfg" ? s.copyBtnDone : ""}`}
-                    onClick={() => copy(cfgJson, "cfg")}
-                  >
-                    {copied === "cfg" ? <IconCheck /> : <IconCopy />}
-                    {copied === "cfg" ? "Copied" : "Copy config"}
-                  </button>
+              <div className={s.installShell}>
+                <div className={s.installCore}>
+                  <div className={s.installLabel}>Claude Desktop config</div>
+                  <div className={s.codeRow}>
+                    <code className={s.codeChip}>claude_desktop_config.json</code>
+                    <button
+                      className={`${s.copyBtn} ${copied === "cfg" ? s.copyBtnDone : ""}`}
+                      onClick={() => copy(cfgJson, "cfg")}
+                    >
+                      {copied === "cfg" ? <IconCheck /> : <IconCopy />}
+                      {copied === "cfg" ? "Copied" : "Copy config"}
+                    </button>
+                  </div>
+                  <pre className={s.configPre}>{cfgJson}</pre>
                 </div>
-                <pre className={s.configPre}>{cfgJson}</pre>
               </div>
             </div>
 
@@ -328,7 +342,7 @@ export default function Page() {
               {showCode ? "Hide generated TypeScript" : "View generated TypeScript"}
               <span style={{ marginLeft: "auto", opacity: 0.4 }}>{showCode ? "▲" : "▼"}</span>
             </button>
-            {showCode && <pre className={`${s.card} ${s.codePre}`}>{result.code}</pre>}
+            {showCode && <pre className={s.codePre}>{result.code}</pre>}
           </>
         )}
       </div>
@@ -340,33 +354,35 @@ function ToolPane({ title, count, tools, dim, highlight }: {
   title: string; count: number; tools: ToolMeta[]; dim?: boolean; highlight?: boolean;
 }) {
   return (
-    <div className={`${s.pane} ${dim ? s.paneDim : ""} ${highlight ? s.paneHighlight : ""}`}>
-      <div className={s.paneHeader}>
-        <span className={`${s.paneTitle} ${highlight ? s.paneTitleGreen : ""}`}>{title}</span>
-        <span className={`${s.paneCount} ${highlight ? s.paneCountGreen : ""}`}>{count} tools</span>
-      </div>
-      <div className={s.toolList}>
-        {tools.map(t => (
-          <details key={t.name} className={s.toolCard}>
-            <summary className={s.toolSummary}>
-              <div className={s.toolNameRow}>
-                <span className={s.toolName}>{t.name}</span>
-                {t.composes.length > 1 && (
-                  <span className={s.toolMergedTag}>+{t.composes.length - 1} merged</span>
+    <div className={`${s.paneShell} ${dim ? s.paneShellDim : ""} ${highlight ? s.paneShellHighlight : ""}`}>
+      <div className={`${s.paneCore} ${highlight ? s.paneCoreHighlight : ""}`}>
+        <div className={s.paneHeader}>
+          <span className={`${s.paneTitle} ${highlight ? s.paneTitleGreen : ""}`}>{title}</span>
+          <span className={`${s.paneCount} ${highlight ? s.paneCountGreen : ""}`}>{count} tools</span>
+        </div>
+        <div className={s.toolList}>
+          {tools.map(t => (
+            <details key={t.name} className={s.toolCard}>
+              <summary className={s.toolSummary}>
+                <div className={s.toolNameRow}>
+                  <span className={s.toolName}>{t.name}</span>
+                  {t.composes.length > 1 && (
+                    <span className={s.toolMergedTag}>+{t.composes.length - 1} merged</span>
+                  )}
+                </div>
+                <span className={s.toolChevron}><IconChevron /></span>
+              </summary>
+              <div className={s.toolBody}>
+                <p className={s.toolDesc}>{t.description}</p>
+                {t.examples?.[0] && (
+                  <pre className={s.toolExample}>
+                    {JSON.stringify(t.examples[0].args, null, 2)}
+                  </pre>
                 )}
               </div>
-              <span className={s.toolChevron}><IconChevron /></span>
-            </summary>
-            <div className={s.toolBody}>
-              <p className={s.toolDesc}>{t.description}</p>
-              {t.examples?.[0] && (
-                <pre className={s.toolExample}>
-                  {JSON.stringify(t.examples[0].args, null, 2)}
-                </pre>
-              )}
-            </div>
-          </details>
-        ))}
+            </details>
+          ))}
+        </div>
       </div>
     </div>
   );
